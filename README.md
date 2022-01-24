@@ -1,26 +1,26 @@
-# Asservissement position panneau solaire
+## Solar panel position control
 
-## Orienter un panneau solaire de façon optimale par rapport à la position du soleil
+## Orient a solar panel optimally in relation to the position of the sun
 
-### Principe
-On cherche à orienter le panneau solaire par rapport au soleil de telle sorte à optimiser son rendement.
-Au fil de la journée, on compare la position du panneau avec un tableau de consigne, et s'il y a écart, on actionne le(s) moteur(s) pour que le panneau se trouve dans la position souhaitée.
+### Principle
+We seek to orient the solar panel in relation to the sun in order to optimize its performance.
+Throughout the day, the position of the panel is compared with a setpoint table, and if there is a difference, the motor(s) are operated so that the panel comes to the desired position.
 
-- Un moteur sur chaque axe avec des fins de course début et fin directement sur le moteur (non gérés dans le programme)
-- Un encodeur sur chaque axe pour mesurer la position relative en degrés par rapport à la position initiale
-- Les mesures sont comparées à un tableau de consigne variable selon le mois et l'heure
-- En élévation, si la mesure est différente de la consigne, le moteur est activé dans un sens ou dans l'autre
-- En azimut, si la mesure est inférieure de la consigne, le moteur est activé dans le sens horaire
-- Initialisation de la position quotidiennement à heure fixe
+- A motor on each axis with start and end limit switches directly on the motor (not managed in the program)
+- An encoder on each axis to measure the relative position in degrees compared to the initial position
+- The measurements are compared to a table of variable setpoints according to the month and the hour
+- In elevation, if the measurement is different from the setpoint, the motor is activated in one direction or the other
+- In azimuth, if the measurement is less than the setpoint, the motor is activated clockwise
+- Initialization of the position daily at a fixed time
 
 
-### Composants
-- Le système est géré par un Arduino.
-- Les moteurs sont actionnés via des relais.
-- La position est lue avec des capteurs incrémentaux installés sur les axes de rotation du panneau.
-- La gestion de la date et l'heure est confiée à un module DS3231.
-- Un écran LCD affiche la date et l'heure, la consigne, la position, et l'état des moteurs.
-- Une liaison série permet quelques interactions avec le système.
+### Components
+- The system is managed by an Arduino.
+- The motors are operated via relays.
+- The position is read with incremental sensors installed on the panel rotation axes.
+- Date and time management is entrusted to a DS3231 module.
+- An LCD screen displays the date and time, the setpoint, the position, and the status of the motors.
+- A serial link allows some interaction with the system.
 
 
 ![Photo1](Photos/photo_panneau.jpg)
@@ -29,4 +29,4 @@ Au fil de la journée, on compare la position du panneau avec un tableau de cons
 
 
 ### Licence
-Distribué sous [licence MIT](license.txt)
+Published under [MIT license](license.txt)
