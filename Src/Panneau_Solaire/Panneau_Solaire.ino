@@ -5,7 +5,7 @@
 // Programme Principal
 // 
 // Auteur: Noël UTTER
-// Date de la version: 09/08/2021
+// Date de la version: 06/03/2022
 // 
 // Principe: Asservissement en azimut et en élévation
 // - Un moteur sur chaque axe avec des fins de course début et fin directement sur le moteur (non gérés dans le programme)
@@ -14,6 +14,7 @@
 // - En élévation, si la mesure est différente de la consigne, le moteur est activé dans un sens ou dans l'autre
 // - En azimut, si la mesure est inférieure de la consigne, le moteur est activé dans le sens horaire
 // - Initialisation de la position quotidiennement à heure fixe
+// - Surveillance du vent avec un anémomètre à impulsions et mise en position sécurisée du panneau solaire pendant une heure si la vitesse dépasse un seuil pendant une durée déterminée
 //
 // ************************************************************************
 // ************************************************************************
@@ -30,12 +31,14 @@
 #define IN_ELEVATION_A      5        // Encodeur Elévation A
 #define IN_ELEVATION_B      3        // Encodeur Elévation B
 #define IN_SWITCHLCD        10       // Switch éclairage LCD
+#define IN_ANEMOMETRE       11       // Signal impulsions anémomètre
 
 // Sorties
 #define OUT_A_M             6        // Sortie moteur azimut moins
 #define OUT_A_P             7        // Sortie moteur azimut plus
 #define OUT_E_M             8        // Sortie moteur elevation moins
 #define OUT_E_P             9        // Sortie moteur elevation plus
+#define OUT_LED_VENT        13       // Sortie led vent au delà du seuil
 
 // Paramétrage des valeurs physiques du système
 #define DEGRES_PAR_PAS      36        // Nombre de degres par impulsion d'encodeur (*10)
@@ -48,10 +51,16 @@
 #define HEURE_INIT          7        // Heure quotidienne d'initialisation
 #define DELAI_INIT          120000   // Nombre de milisecondes en déplacement - lors de l'initialisation (au moins égal à la durée nécessaire pour aller d'une extrémité à l'autre)
 
+// Valeurs pour l'anémomètre
+#define SEUIL_SECURITE      200      // Nb impulsions par seconde au delà duquel le panneau doit se mettre en sécurité (20 impulsions = 1,75 m/s)
+#define DUREE_DEPASSE_MIN   5        // Nombre de secondes pendant lesquels le seuil doit être dépassé pour activer la mise en sécurité
+#define DELAI_SECURITE_INI  3600     // Nombre de secondes après mise en sécurité et avant rétablissement
+
 // Autres valeurs
 #define DELAI_MVTA          4000     // Nombre de milisecondes de pause à respecter entre deux déplacements en Azimut
 #define DELAI_MVTE          1000     // Nombre de milisecondes de pause à respecter entre deux déplacement en Elevation
 #define NB_LECTURES         20       // Nombre de lectures successives à faire pour définir l'état des entrées des encodeurs
+#define NB_LECTURES_A       3        // Nombre de lectures successives à faire pour définir l'état de l'entrées anémomètre
 #define SEUIL_VALIDITE      17       // Nombre de lectures identiques pour qu'on considère que la valeur est stable
 #define DELAI_LECTURES      0        // Nombre de milisecondes entre chaque lecture successive
 #define MOTEUR_STOP         0        // Valeur pour indiquer qu'un moteur est à l'arrêt
@@ -73,8 +82,13 @@ int consigneElevation;               // Consigne Elevation
 unsigned long allumageLCD;           // Moment d'allumage du LCD
 unsigned long lastMvtA;              // Horodatage dernier mouvement en azimut
 unsigned long lastMvtE;              // Horodatage dernier mouvement en élévation
-bool valAzimutA;
-bool valElevationA;
+unsigned int nbImpulsionsAnemometre; // Nb Impulsions envoyées par l'anémomètre
+unsigned int nbImpulsionsAnemometreAff; // Nb Impulsions envoyées par l'anémomètre pour affichage
+unsigned int dureeDepassement;       // Nb de secondes depuis lesquelles le vent a dépassé le seuil
+unsigned long delaiSecurite;         // Nb de secondes pendant lesquelles le panneau doit encore rester en sécurité
+bool valAzimutA;                     // Etat de l'entrée encodeur azimut A
+bool valElevationA;                  // Etat de l'entrée encodeur élévation A
+bool posAnemometre;                  // Etat de l'entrée anémomètre
 
 String commande;
 Time t;                              // Date et heure courante
@@ -132,16 +146,19 @@ void setup()
   digitalWrite(OUT_A_P, HIGH);
   digitalWrite(OUT_E_M, HIGH);
   digitalWrite(OUT_E_P, HIGH);
+  digitalWrite(OUT_LED_VENT, HIGH);
   pinMode(OUT_A_M, OUTPUT);
   pinMode(OUT_A_P, OUTPUT);
   pinMode(OUT_E_M, OUTPUT);
   pinMode(OUT_E_P, OUTPUT);
+  pinMode(OUT_LED_VENT, OUTPUT);
   // Initialisation entrées
   pinMode(IN_AZIMUT_A, INPUT);
   pinMode(IN_AZIMUT_B, INPUT);
   pinMode(IN_ELEVATION_A, INPUT);
   pinMode(IN_ELEVATION_B, INPUT);
   pinMode(IN_SWITCHLCD, INPUT_PULLUP);
+  pinMode(IN_ANEMOMETRE, INPUT_PULLUP);
   // Initialisation valeurs
   consigneAzimut = MIN_AZIMUT;
   consigneElevation = MIN_ELEVATION;
@@ -150,6 +167,10 @@ void setup()
   refreshAzimut = true;
   refreshElevation = true;
   etatLCD = false;
+  posAnemometre = digitalRead(IN_ANEMOMETRE);
+  nbImpulsionsAnemometre = 0;
+  dureeDepassement = 0;
+  delaiSecurite = 0;
   // Initialisation RTC
   rtc.begin();
   // Initialisation comm série
@@ -172,20 +193,26 @@ void loop()
   // Lecture des encodeurs
   lectureAzimut();
   lectureElevation();
+  // Lecture de l'anémomètre;
+  lectureAnemometre();
   // Refresh des valeurs Azimut et Elevation à l'écran
   if (refreshAzimut)
     afficheAzimut();
   if (refreshElevation)
     afficheElevation();
-  if (lit_heure())            // Lecture de l'horloge
+  if (lit_heure())            // Lecture de l'horloge (La fonction retourne vrai si la seconde a changé)
   {
+    traiteAnemometre();
     if ((t.hour == HEURE_INIT) && (t.min == 0) && (t.sec == 0))
     {
-      // Initialisation physique tous les jours à heure fixe
-      // Reset de l'arduino en utilisant le watchdog et une boucle infinie
-      wdt_disable();
-      wdt_enable(WDTO_15MS);
-      for(;;);
+      if (delaiSecurite == 0)  // Seulement si on n'est pas en mise en sécurité
+      {
+        // Initialisation physique tous les jours à heure fixe
+        // Reset de l'arduino en utilisant le watchdog et une boucle infinie
+        wdt_disable();
+        wdt_enable(WDTO_15MS);
+        for(;;);
+      }
     }
     else
     {
@@ -219,8 +246,14 @@ void loop()
       {
         // De 23h à 6h: On ne change pas la consigne
       }
-    }
 
+      if (delaiSecurite > 0)
+      {
+        // On est en situation de mise en sécurité
+        consigneElevation = MAX_ELEVATION;
+        delaiSecurite--;
+      }
+    }
     // Mouvement en azimut
       if ((valAzimut < consigneAzimut) && (moteurAzimut != MOTEUR_PLUS))         // S'il faut se déplacer en A+ et si le moteur n'est pas déjà en train de tourner dans ce sens
         moteurAzimutPlus();
@@ -266,17 +299,28 @@ void loop()
 void afficheHeure()
 {
   lcd.setCursor(0,0);
-  lcd.print(nbEnChaine(t.date, 2,0));
-  lcd.print("/");
-  lcd.print(nbEnChaine(t.mon, 2,0));
-  lcd.print("/");
-  lcd.print(nbEnChaine(t.year, 4,0));
-  lcd.setCursor(12,0);
-  lcd.print(nbEnChaine(t.hour, 2,0));
-  lcd.print(":");
-  lcd.print(nbEnChaine(t.min, 2,0));
-  lcd.print(":");
-  lcd.print(nbEnChaine(t.sec,2,0));
+  if (delaiSecurite == 0)
+  {
+    // Affichage normal
+    lcd.print(nbEnChaine(t.date, 2,0));
+    lcd.print("/");
+    lcd.print(nbEnChaine(t.mon, 2,0));
+//    lcd.print("/");
+//    lcd.print(nbEnChaine(t.year, 4,0));
+    lcd.print("  ");
+    lcd.print(nbEnChaine(t.hour, 2,0));
+    lcd.print(":");
+    lcd.print(nbEnChaine(t.min, 2,0));
+    lcd.print(":");
+    lcd.print(nbEnChaine(t.sec,2,0));
+    lcd.print("  ");
+    lcd.print(nbEnChaine(nbImpulsionsAnemometreAff,3,0));
+  }
+  else
+  {
+    // Affichage sécurité vent
+    lcd.print("** SECU VENT " + nbEnChaine(delaiSecurite,4,0) + " **");
+  }
 }
 
 // ------------------------
@@ -406,6 +450,30 @@ void lectureElevation()
   }
   else
     trace("Parasites Elevation");
+}
+
+// ------------------
+// Lecture anémomètre
+// ------------------
+void lectureAnemometre()
+{
+  byte VALHigh = 0;
+  byte VALLow = 0;
+  bool newVAL;
+  for (byte i=0; i<NB_LECTURES_A; i++)                        // On lit l'entrée plusieurs fois
+  {
+    if (digitalRead(IN_ANEMOMETRE))
+      VALHigh++;
+    else
+      VALLow++;
+    delay(DELAI_LECTURES);
+  }
+  newVAL = VALHigh > VALLow;                                // On retient la valeur qui apparaît le plus souvent
+  if (newVAL != posAnemometre)
+  {
+    nbImpulsionsAnemometre++;
+    posAnemometre = newVAL;
+  }
 }
 
 // -------------------------------
@@ -633,10 +701,38 @@ void traiteCommande()
   }
 }
 
+// ----------------------------------------
+// Traitement de la lecture de l'anémomètre
+// ----------------------------------------
+void traiteAnemometre()
+{
+  if (nbImpulsionsAnemometre > SEUIL_SECURITE)
+  {
+    // Vitesse du vent supérieure au seuil de sécurité
+    digitalWrite(OUT_LED_VENT, LOW);
+    dureeDepassement++;
+    if ((dureeDepassement > DUREE_DEPASSE_MIN) && (delaiSecurite == 0))
+    {
+      // le vent a dépassé le seuil pendant la durée mini et on n'est pas déjà en sécurité -> Mise en sécurité
+      delaiSecurite = DELAI_SECURITE_INI;
+    }
+  }
+  else
+  {
+    // Vitesse du vent inférieure au seuil de sécurité
+    digitalWrite(OUT_LED_VENT, HIGH);
+    dureeDepassement = 0;
+  }
+  trace("Nb Imp Anémo: " + nbEnChaine(nbImpulsionsAnemometre,4,0));
+  nbImpulsionsAnemometreAff = nbImpulsionsAnemometre;
+  nbImpulsionsAnemometre = 0;    // Réinitialisation du nombre d'impulsions lues
+}
+
+
 // --------------------------------------------------------------
 // Mise en forme d'un nombre entier en chaine de longueur définie
 // --------------------------------------------------------------
-String nbEnChaine(int nb, byte ent, byte dec)
+String nbEnChaine(unsigned int nb, byte ent, byte dec)
 {
   String retour = String(nb, DEC);
   while (retour.length() < ent+dec)

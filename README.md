@@ -12,6 +12,7 @@ Throughout the day, the position of the panel is compared with a setpoint table,
 - In elevation, if the measurement is different from the setpoint, the motor is activated in one direction or the other
 - In azimuth, if the measurement is less than the setpoint, the motor is activated clockwise
 - Initialization of the position daily at a fixed time
+- Monitoring of the wind with a pulse anemometer and placing the solar panel in a secure position for one hour if the speed exceeds a threshold for a determined period
 
 
 ### Components
