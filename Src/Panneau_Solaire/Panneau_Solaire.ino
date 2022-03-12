@@ -5,7 +5,7 @@
 // Programme Principal
 // 
 // Auteur: Noël UTTER
-// Date de la version: 06/03/2022
+// Date de la version: 12/03/2022
 // 
 // Principe: Asservissement en azimut et en élévation
 // - Un moteur sur chaque axe avec des fins de course début et fin directement sur le moteur (non gérés dans le programme)
@@ -53,7 +53,7 @@
 
 // Valeurs pour l'anémomètre
 #define SEUIL_SECURITE      200      // Nb impulsions par seconde au delà duquel le panneau doit se mettre en sécurité (20 impulsions = 1,75 m/s)
-#define DUREE_DEPASSE_MIN   5        // Nombre de secondes pendant lesquels le seuil doit être dépassé pour activer la mise en sécurité
+#define DUREE_DEPASSE_MIN   2        // Nombre de secondes pendant lesquels le seuil doit être dépassé pour activer la mise en sécurité
 #define DELAI_SECURITE_INI  3600     // Nombre de secondes après mise en sécurité et avant rétablissement
 
 // Autres valeurs
@@ -711,9 +711,10 @@ void traiteAnemometre()
     // Vitesse du vent supérieure au seuil de sécurité
     digitalWrite(OUT_LED_VENT, LOW);
     dureeDepassement++;
-    if ((dureeDepassement > DUREE_DEPASSE_MIN) && (delaiSecurite == 0))
+//    if ((dureeDepassement > DUREE_DEPASSE_MIN) && (delaiSecurite == 0))
+    if (dureeDepassement > DUREE_DEPASSE_MIN)
     {
-      // le vent a dépassé le seuil pendant la durée mini et on n'est pas déjà en sécurité -> Mise en sécurité
+      // le vent a dépassé le seuil pendant la durée mini -> Mise en sécurité
       delaiSecurite = DELAI_SECURITE_INI;
     }
   }
